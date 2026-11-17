@@ -1,0 +1,46 @@
+cabal-version: 3.4
+name:          realworld-haskell
+version:       0.1.0.0
+synopsis:      RealWorld example app in Haskell
+author:        solomon
+maintainer:    ssbothwell@gmail.com
+build-type:    Simple
+
+common common-settings
+  default-language:   GHC2021
+  default-extensions:
+    DerivingVia
+    LambdaCase
+    OverloadedStrings
+    RecordWildCards
+
+  ghc-options:
+    -Wall -Wcpp-undef -Widentities -Wincomplete-record-updates
+    -Wincomplete-uni-patterns -Wpartial-fields
+    -Werror=missing-home-modules
+
+library
+  import:          common-settings
+  hs-source-dirs:  src
+  exposed-modules: RealWorld
+  build-depends:   base >=4.18 && <5
+
+executable realworld-haskell
+  import:         common-settings
+  hs-source-dirs: app
+  main-is:        Main.hs
+  build-depends:
+    , base
+    , realworld-haskell
+
+test-suite realworld-haskell-test
+  import:         common-settings
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is:        Main.hs
+  build-depends:
+    , base
+    , hedgehog
+    , hspec
+    , hspec-hedgehog
+    , realworld-haskell
