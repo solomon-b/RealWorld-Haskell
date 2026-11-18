@@ -6,7 +6,7 @@ module Phase2.Lens
 
     -- * Moore
     Moore,
-    moore,
+    fromMealys,
 
     -- * Mealy
     Mealy,
@@ -37,8 +37,8 @@ type Moore s i o = Lens s s o i
 
 -- | Makes a Moore machine from two Mealy machines on the same state.
 -- The first gives the observation. The second gives the transition.
-moore :: Mealy s () o -> Mealy s i () -> Moore s i o
-moore observe transition = Lens $ \s -> case runMealy observe s () of
+fromMealys :: Mealy s () o -> Mealy s i () -> Moore s i o
+fromMealys observe transition = Lens $ \s -> case runMealy observe s () of
   (o, s') -> (o, \i -> case runMealy transition s' i of ((), s'') -> s'')
 
 --------------------------------------------------------------------------------
