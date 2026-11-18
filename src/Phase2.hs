@@ -18,7 +18,7 @@ where
 
 --------------------------------------------------------------------------------
 
-import Phase2.Lens (Lens (..), Moore, compose, fromMealys, lmap, rmap)
+import Phase2.Lens (Lens (..), Moore, compose, lmap, rmap, runThen)
 import Phase2.World (Ur (..), World, run)
 import Phase2.World qualified as World
 
@@ -31,7 +31,7 @@ main = run echo
 -- transition writes a line.
 console :: Moore World (Ur String) (Ur String)
 console =
-  fromMealys
+  runThen
     (lmap (\() -> Ur ()) World.getLine)
     (rmap (\(Ur ()) -> ()) World.putStrLn)
 

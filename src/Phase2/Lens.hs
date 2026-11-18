@@ -6,7 +6,7 @@ module Phase2.Lens
 
     -- * Moore
     Moore,
-    fromMealys,
+    runThen,
 
     -- * Mealy
     Mealy,
@@ -35,10 +35,22 @@ compose (Lens f) (Lens g) = Lens $ \s -> case f s of
 -- output depends only on the state.
 type Moore s i o = Lens s s o i
 
--- | Makes a Moore machine from two Mealy machines on the same state.
--- The first gives the observation. The second gives the transition.
-fromMealys :: Mealy s () o -> Mealy s i () -> Moore s i o
-fromMealys observe transition = Lens $ \s -> case runMealy observe s () of
+-- | Runs one machine, then runs a second machine from the state that
+-- the first one returned. The first gives the observation of the
+-- result. The second gives the transition.
+--
+-- In Poly, the Moore interface is a composite, @O y^I ≅ O y ◁ y^I@.
+-- The two arguments are maps @f : S y^S ⇒ O y@ and @g : S y^S ⇒ y^I@.
+-- With the comultiplication @δ : S y^S ⇒ S y^S ◁ S y^S@ of the store
+-- comonoid:
+--
+-- @
+-- runThen f g = δ ⨟ (f ◁ g)
+-- @
+--
+-- This is @Run_2@ of the Poly book, with two different systems.
+runThen :: Mealy s () o -> Mealy s i () -> Moore s i o
+runThen observe transition = Lens $ \s -> case runMealy observe s () of
   (o, s') -> (o, \i -> case runMealy transition s' i of ((), s'') -> s'')
 
 --------------------------------------------------------------------------------
