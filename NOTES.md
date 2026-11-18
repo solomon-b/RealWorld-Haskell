@@ -6,7 +6,44 @@ The repo is a workshop for a blog post. The post replaces monadic IO with
 linear Moore and Mealy machines and shows effectful programs in that
 paradigm. The aim is an alternative with power similar to monads.
 
-## The design
+## Phase plan
+
+Each phase is a separate module tree that compiles and runs alone. The phases
+record how the design changes from one step to the next.
+
+| Phase | Subject                                                                                                                                                    | Status      |
+|-------|------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|
+| 1     | The token is a value. Each effect is a function `World %1 -> (a, World)`. One Moore machine owns the token                                                 | Built       |
+| 2     | Each effect is a Mealy machine on `World`, made with `liftIO`. A program is a Moore machine built by composition                                           | Built       |
+| 3     | Command and response. The world is a Mealy machine that answers a protocol. A program is pure, a function from a state to a `Step`                         | Built       |
+| 4     | Wiring diagrams. A pile of pure Moore machines, joined with the plain `tensor` from Lensy Moore. `plug` gives the pile the protocol as its outer interface | Not started |
+| 5     | `Tree`. The fixed point of `Step`, which hides the state of a program                                                                                      | Not started |
+| 6     | `Tensor` and `both`. The parallel product on protocols, so that two programs can each give a command in the same step                                      | Not started |
+
+The order of phases 5 and 6 is not confirmed. Phase 6 does not depend on
+phase 5.
+
+What each later phase needs:
+
+- Phase 4 needs `Step` and plain Moore machines. Phase 3 has both.
+- Phase 5 needs only `Step`.
+- Phase 6 needs `Step` and `Program`. It lifts the main limit of phase 4, one
+  command per step for the full pile.
+
+Open decision for phase 4: the lens type of the pure machines.
+
+- The linear `Lens` everywhere gives one lens type and one set of
+  combinators. Each value that a machine uses two times or drops must be in
+  `Ur`, so `counter` is a `Moore (Ur Int) () (Ur Int)`.
+- A plain lens for the pile reads as in the post. It gives two lens types,
+  and two copies of `compose` and `tensor`.
+- A linear function can be used where a plain function is expected. So a
+  pile of linear machines can still go into `plug` and give a plain
+  `Program`.
+- A lens with a multiplicity parameter, `s %m -> (a, b %m -> t)`, could give
+  both. It is not checked.
+
+## The design (phase 2)
 
 The design comes from a conversation with Reed Mullanix.
 
@@ -85,7 +122,7 @@ a coalgebra for the composite.
 In an ordinary Moore machine the readout is `S → O`. Here the readout returns
 a state, because it uses the state one time.
 
-## The command and response design
+## The command and response design (phases 3 to 6)
 
 This is the current direction. It is the next step after the Lensy Moore post
 and cofree-bot. The world is one machine that owns the token. The program is
@@ -260,11 +297,19 @@ program Bye               = Step Quit absurd
 - Halt: `Quit` has no continuation.
 
 The state type does the work that bind does in `IO`. The cost is that the
-program counter is written by hand. `Fix` removes that cost in a later phase.
+program counter is written by hand. `Tree` removes that cost in phase 5.
 
-### Wiring diagrams and the outer interface (not built)
+### Phase 4. Wiring diagrams and the outer interface (not built)
 
 A pile of pure Moore machines can have the protocol as its outer interface.
+
+The pile uses the plain `tensor` on machines, as in the post. It does not
+need `both`. `both` pairs two things that already speak a protocol, and in
+this phase no inner machine does.
+
+```haskell
+tensor :: Moore s i o -> Moore t i' o' -> Moore (s, t) (i, i') (o, o')
+```
 
 - The pile stays as in Lensy Moore. The inner machines are plain
   `Moore s i o`, tensored and wired with plain lenses. `Step` does not appear
@@ -296,7 +341,7 @@ Limits:
 
 - One command per step for the full pile. If two machines each want an effect
   in the same step, the outer interface must be a tensor or a sum of
-  protocols.
+  protocols. Phase 6 has the tensor.
 - Inner wires have fixed types. The wiring knows the command, so it can
   convert the response with no catch-all. The inner machines see one plain
   input type.
@@ -324,21 +369,176 @@ on stdin still ends the program with an exception.
 The phase 3 copy of `Lens.hs` has no `moore`, `lmap`, or `rmap`, because
 phase 3 does not use them. It keeps `compose` for the wiring work.
 
-### Deferred: Fix
+### The general trick: a protocol is a dependent polynomial
+
+This is from Reed. A type `f :: Type -> Type` encodes a dependent polynomial.
+`f r` is the type of the positions whose direction type is `r`. `Command r`
+is one such `f`.
+
+`Step f t` is the polynomial as a functor. It is a position and a function
+from its direction. Reed calls this the ΣΠ interpretation.
+
+A protocol with one response type gives the plain Moore machine again.
+
+```haskell
+data Mono o i r where
+  Mono :: o -> Mono o i i
+```
+
+`Program (Mono o i) t` is `t -> (o, i -> t)`, which is `Moore t i o`. So
+`Program` is a Moore machine with a dependent interface, and no conversion to
+`Moore` is needed to pair it with the world. The program is the Moore side.
+`console` is the Mealy side. `close` is `annihilate` for those two types.
+
+### Phases 5 and 6
+
+Neither phase is started. Each needs a decision to start.
+
+**Phase 5. Tree.** Reed's type, with the response type hidden at each node.
+
+```haskell
+data Tree f where
+  Tree :: f r -> (r -> Tree f) -> Tree f
+```
+
+In Agda this is the `Fix` from the same conversation.
 
 ```agda
 data Fix (A : Type) (B : A → Type) : Type
   roll : (x : A) → (B x → Fix A B) → Fix A B
 ```
 
+`Tree f` is the fixed point of `Step f`. `Step` is one layer, and `Tree` is
+the layers nested with the state hidden. A program is then nested
+continuations that read like a `do` block.
+
 ```haskell
-data Fix f where
-  Roll :: f r -> (r -> Fix f) -> Fix f
+Tree GetStrLn (\name -> Tree (PutStrLn ("hello " ++ name)) (\() -> Tree Quit absurd))
 ```
 
-`Fix Command` is a tree of interactions, and it is the fixed point of
-`Step Command`. It hides the state, so a program is nested continuations that
-read like a `do` block. Nothing before it depends on it.
+The type in the chat was `data Moore cmd r = Moore (cmd r) (r -> Moore cmd r)`.
+That has `r` as a parameter, so every node has the same response type. The
+example needs a hidden `r`, as above. Nothing before phase 5 depends on it.
+
+**An idea for phase 5: `do` notation with no monad.** This is by hand and is
+not compiled.
+
+The `QualifiedDo` extension lets a `do` block take its `>>=` and `>>` from a
+module that the code names. It does not ask for a `Monad` instance, and the
+two functions can have any types. For `Tree`, the bind is the constructor.
+
+```haskell
+module Tree.Do where
+
+(>>=) :: f r -> (r -> Tree f) -> Tree f
+(>>=) = Tree
+
+(>>) :: f r -> Tree f -> Tree f
+c >> k = Tree c (\_ -> k)
+```
+
+A program is then a real `do` block.
+
+```haskell
+greet :: Tree Command
+greet = Tree.Do.do
+  PutStrLn "What is your name?"
+  name <- GetStrLn
+  PutStrLn ("hello " ++ name)
+  stop
+
+stop :: Tree Command
+stop = Tree Quit absurd
+```
+
+- Each statement is a bare command. The last line is a `Tree`.
+- A loop is ordinary recursion, with the name of the program as the last
+  line.
+- The point for the post: the `do` block needs no monad, and its bind is the
+  `Tree` constructor. The notation was never tied to the class.
+- The limit: the left side of `<-` is a single command. A `Tree` has no
+  result, so the result of another tree cannot be bound there. A tree with a
+  result type, `Tree f a`, is the free monad.
+
+An example of the limit. A helper prints a question and gives back the
+answer, and a program uses it two times.
+
+```haskell
+ask :: String -> Tree Command
+ask question = Tree.Do.do
+  PutStrLn question
+  GetStrLn                             -- error 1
+
+greet :: Tree Command
+greet = Tree.Do.do
+  name <- ask "What is your name?"     -- error 2
+  age  <- ask "How old are you?"
+  PutStrLn (name ++ " is " ++ age)
+  stop
+```
+
+- Error 1: the last line of a block must be a `Tree Command`, and `GetStrLn`
+  is a command. `ask` wants to say that it ends with a `String`, and
+  `Tree Command` has no place for that. A tree only ends at `Quit`.
+- Error 2: the left side of the bind must be one command, `f r`, and
+  `ask "..."` is a tree.
+
+So this is not possible: write a piece of a program that produces a value,
+give it a name, and use it in the middle of another program. Every tree is a
+whole program to the end.
+
+A helper can take the rest of the program as an argument. That works, but the
+calls to it are nested lambdas outside the `do` notation.
+
+```haskell
+ask :: String -> (String -> Tree Command) -> Tree Command
+ask question continue = Tree.Do.do
+  PutStrLn question
+  answer <- GetStrLn
+  continue answer
+
+greet :: Tree Command
+greet =
+  ask "What is your name?" $ \name ->
+    ask "How old are you?" $ \age -> Tree.Do.do
+      PutStrLn (name ++ " is " ++ age)
+      stop
+```
+
+There are two ways to get `name <- ask "..."`, and each one is a monad.
+
+- A result type on the tree, `Tree f a`. That is the free monad.
+- A bind that takes helpers of type `(r -> Tree f) -> Tree f` on its left
+  side. That is the continuation monad, without the class.
+
+A quasiquoter can give the same notation. It would turn `x <- c; rest` into
+`Tree c (\x -> rest)`. It needs a Haskell parser for the expressions in the
+statements, such as `haskell-src-meta`, which is one more dependency. It is
+worth it only for syntax that a `do` block cannot give.
+
+**Phase 6. Tensor and both.** The parallel product of Poly, on protocols.
+
+```haskell
+data Tensor f g r where
+  Tensor :: f a -> g b -> Tensor f g (a, b)
+```
+
+A command of the tensor is one command from each protocol. Its response is
+both responses. Two pure programs then compose in parallel. This is by hand.
+
+```haskell
+both :: Program f s -> Program g t -> Program (Tensor f g) (s, t)
+both p q (s, t) = case (p s, q t) of
+  (Step c k, Step d l) -> Step (Tensor c d) (\(a, b) -> (k a, l b))
+```
+
+- This is the parallel composition that was not possible when both machines
+  held `World`. Programs are pure, so nothing blocks it.
+- It removes the limit of one command per step for a pile of machines. The
+  outer interface can be a tensor of protocols.
+- The world has one token, so it must answer a `Tensor` command in some
+  order, left and then right. That choice is in one function on the world
+  side, and no program sees it.
 
 ### Dragons
 
@@ -346,8 +546,8 @@ read like a `do` block. Nothing before it depends on it.
   annotations grow.
 - The classes in monoidal-functors do not apply. A protocol has kind
   `Type -> Type`.
-- Tensor and sum of protocols need their own GADTs, such as
-  `data Sum f g r = L (f r) | R (g r)`.
+- Tensor and sum of protocols need their own GADTs. `Tensor` is in the plan
+  for phase 6. A sum would be `data Sum f g r = L (f r) | R (g r)`.
 - Agda computes `Response c` from a value. Haskell can only carry the index.
 
 ### History note
@@ -363,11 +563,11 @@ imports nothing from another phase, so some code is repeated. Each phase has
 a top module that exports `main` and has a comment with what the phase shows
 and what its defect is.
 
-| Phase | Modules | Content |
-| --- | --- | --- |
-| 1 | `Phase1`, `Phase1.Lens`, `Phase1.World`, `Phase1.Console` | The token is a value. Each effect is a function `World %1 -> (a, World)`. One Moore machine owns the token |
-| 2 | `Phase2`, `Phase2.Lens`, `Phase2.World` | Each effect is a Mealy machine on `World`, made with `liftIO`. A program is a Moore machine built by composition. Sections "The design" and "About the token" describe this phase |
-| 3 | `Phase3`, `Phase3.Lens`, `Phase3.World`, `Phase3.Console`, `Phase3.Program` | Command and response. The world is a Mealy machine that answers a protocol. A program is pure, and `close` runs it against the world |
+| Phase | Modules                                                                     | Content                                                                                                                                                                           |
+|-------|-----------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1     | `Phase1`, `Phase1.Lens`, `Phase1.World`, `Phase1.Console`                   | The token is a value. Each effect is a function `World %1 -> (a, World)`. One Moore machine owns the token                                                                        |
+| 2     | `Phase2`, `Phase2.Lens`, `Phase2.World`                                     | Each effect is a Mealy machine on `World`, made with `liftIO`. A program is a Moore machine built by composition. Sections "The design" and "About the token" describe this phase |
+| 3     | `Phase3`, `Phase3.Lens`, `Phase3.World`, `Phase3.Console`, `Phase3.Program` | Command and response. The world is a Mealy machine that answers a protocol. A program is pure, and `close` runs it against the world                                              |
 
 `app/Main.hs` selects the phase. Remove the comment marker from one line and
 put one on the others.
