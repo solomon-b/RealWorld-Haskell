@@ -259,24 +259,57 @@ putStrLn :: Mealy World (Ur String) (Ur ())
 The same effects as in phase 1, now as machines. Each is one call to
 `liftIO`.
 
-### `fromMealys`
+### `runThen`
 
 ```haskell
-fromMealys :: Mealy s () o -> Mealy s i () -> Moore s i o
+runThen :: Mealy s () o -> Mealy s i () -> Moore s i o
 ```
 
-Makes a Moore machine from two Mealy machines on the same state. The first
-gives the observation. The second gives the transition.
+Runs one machine, and then runs a second machine from the state that the
+first one returned. The first gives the observation of the result. The second
+gives the transition.
 
-This is not a standard construction. It was written as glue. The name
-`moore` is kept free for a constructor from plain functions, to match
-`mealy`. A possible reading in Poly, not checked, is that the Moore interface is a composite,
-`O y^I = O y ◁ y^I`. `Mealy s () o` is `S → O × S`, a coalgebra for `O y`.
-`Mealy s i ()` is `S → S^I`, a coalgebra for `y^I`. Two coalgebras on the
-same state compose to a coalgebra for the composite.
+It started as glue with the name `moore`, and then `fromMealys`. It is a
+standard construction. The reading in Poly is checked in Agda, in the
+cofree-coffee/poly repo, in `src/Poly/Machines/FromMealys.agda`. That file is
+not committed there yet.
+
+1. The Moore interface is a composite, `O y^I ≅ O y ◁ y^I`. A Moore step is
+   an output step and then an input step.
+2. `Mealy S ⊤ O` is the same data as a map `S y^S ⇒ O y`, which is a function
+   `S → O × S`.
+3. `Mealy S I ⊤` is the same data as a map `S y^S ⇒ y^I`, which is a function
+   `S → I → S`.
+4. With `δ : S y^S ⇒ S y^S ◁ S y^S`, the comultiplication of the store
+   comonoid, `runThen f g = δ ⨟ (f ◁ g)`, followed by the isomorphism of
+   part 1.
+
+All four parts hold with no change, and every proof is `refl`.
+
+- The construction works for any two interfaces. Maps `S y^S ⇒ Q` and
+  `S y^S ⇒ R` give a map `S y^S ⇒ Q ◁ R` by the same formula.
+- It uses nothing specific to the store. It works for any comonoid for `◁`.
+- The Poly book has the case where both maps are the same,
+  `Run_n(φ) = δ^(n) ⨟ φ^{◁n}`, in the subsection "Running dynamical systems"
+  of the chapter "Polynomial comonoids and retrofunctors". `runThen` is
+  `Run_2` with two different systems. The name comes from there.
+
+So phase 2 already has a form of sequencing from `◁`, before any protocol
+exists.
+
+Not verified:
+
+- The match between the Agda function and the Haskell one is by reading. The
+  Haskell version is linear and the Agda version is not.
+- The section of the book is from its TeX source. By a count of the chapters
+  it is 7.1.5, and that number is not confirmed against the PDF.
+- The search of the book for a name did not cover its third part.
 
 In an ordinary Moore machine the readout is `S → O`. Here the readout returns
 a state, because it uses the state one time.
+
+The name `moore` is kept free for a constructor from plain functions, to
+match `mealy`.
 
 ### `run`
 
@@ -291,7 +324,7 @@ The driver, as in phase 1. The state of the machine is the token alone.
 ```haskell
 console :: Moore World (Ur String) (Ur String)
 console =
-  fromMealys
+  runThen
     (lmap (\() -> Ur ()) World.getLine)
     (rmap (\(Ur ()) -> ()) World.putStrLn)
 
@@ -325,7 +358,7 @@ Modules: `Phase3`, `Phase3.Lens`, `Phase3.World`, `Phase3.Console`,
 `Phase3.Program`.
 
 `Lens`, `Moore`, `Mealy`, `mealy`, `runMealy`, `compose`, `World`, `Ur`, and
-`liftIO` are as in phase 2. This phase has no `fromMealys`, `lmap`, `rmap`,
+`liftIO` are as in phase 2. This phase has no `runThen`, `lmap`, `rmap`,
 `getLine`, or `putStrLn`.
 
 ### Where the design comes from
@@ -928,16 +961,7 @@ No test covers the library. The test suite has one placeholder property.
 
 Small items that are not part of a phase.
 
-- Check the Poly reading of `fromMealys`. The claim is that the Moore
-  interface is a composite, `O y^I = O y ◁ y^I`, and that `fromMealys`
-  composes a coalgebra for `O y` with a coalgebra for `y^I`. If it holds, the
-  function is a special case of something general and could have a better
-  name and type.
-- Give `fromMealys` a name by the naming rule, after its Poly reading is
-  checked.
 - Confirm the order of phases 5 and 6.
-- Decide if phase 2 gets a `moore` constructor from plain functions,
-  `moore :: (s %1 -> (o, i %1 -> s)) -> Moore s i o`.
 - Check if a lens with a multiplicity parameter, `s %m -> (a, b %m -> t)`,
   can replace the two lens types of phase 4.
 - Handle end of file on stdin. All phases end with an exception there.
