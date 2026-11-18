@@ -602,78 +602,122 @@ machines are joined with a tensor and wired with a plain lens. One last
 wiring gives the pile the console protocol as its outer interface. The result
 is a `Program` as in phase 3.
 
-Modules: `Phase4`, `Phase4.Moore`, `Phase4.Wiring`, `Phase4.Lens`,
-`Phase4.World`, `Phase4.Console`, `Phase4.Program`.
+Modules: `Phase4`, `Phase4.Lens`, `Phase4.Wiring`, `Phase4.World`,
+`Phase4.Console`, `Phase4.Program`.
 
-The last four are copies from phase 3. The `Lens` copy has no `compose`.
+`World`, `Ur`, `liftIO`, `Command`, `interpret`, `console`, `Step`,
+`Program`, `annihilate`, and `run` are as in phase 3. Their types now name
+the multiplicity `'One` where they use a lens.
 
-### Two lens types
-
-The pile uses `Lens` from the `microlens` library, and the machines are the
-code of the post. These lenses are not linear. The linear `Lens` stays in the
-phase for `console`, `annihilate`, and `run` only.
-
-The other choices were these.
-
-- The linear `Lens` everywhere gives one lens type and one set of
-  combinators. Each value that a machine uses two times or drops must then
-  be in `Ur`.
-- A lens with a multiplicity parameter, `s %m -> (a, b %m -> t)`, could give
-  both. It is not checked.
-
-In GHC, a linear function can go where a plain function is expected only
-with an explicit lambda around it.
-
-### `Moore`, `observe`, and `transition`
+### `Lens`, with a multiplicity
 
 ```haskell
-type Moore s i o = Lens s s o i      -- Lens from microlens
-
-observe    :: Moore s i o -> s -> o
-transition :: Moore s i o -> s -> i -> s
+newtype Lens (m :: Multiplicity) s t a b = Lens {runLens :: s %m -> (a, b %m -> t)}
 ```
 
-A pure Moore machine, as in the post. An ordinary lens has two separate
-functions. `observe` is the view, and it gives the output of a state.
-`transition` is the set, and it gives the next state from a state and an
-input. `Phase4.Moore` also has the `view` and `set` of the post, which these
-two use.
+One lens type for linear lenses and for plain lenses.
 
-This `Moore` and the linear `Moore` of `Phase4.Lens` have the same name and
-are different types.
+The problem that it solves: the token needs a linear lens, and the machines
+of the post cannot be linear. `counter` shows its state and also uses it for
+the next state, which is two uses. So the phase needs both kinds of lens.
+
+In GHC every function arrow has a multiplicity. It says how many times the
+function can use its argument.
+
+```haskell
+a %1 -> b      -- is  a %'One  -> b    exactly one time
+a -> b         -- is  a %'Many -> b    any number of times
+```
+
+So `->` and `%1 ->` are one type constructor with a different setting, and
+the setting can be a type variable. `Lens` has it as its first parameter.
+
+- `Lens 'One s t a b` is the linear lens of phases 1 to 3. The machines that
+  hold the token have this multiplicity.
+- `Lens 'Many s t a b` is a plain lens. The pure machines have this
+  multiplicity, so they can use a value two times or drop it, with no `Ur`.
+
+Two lenses must have the same `m` to be composed or tensored. A `'Many`
+machine cannot be joined directly to a `'One` machine. This phase does not
+need that. The pile is all `'Many`, and `into` and `annihilate` are where the
+pure side meets the world.
+
+The first version of this phase had two lens types, the linear one and `Lens`
+from the `microlens` library. In GHC, a linear function can go where a plain
+function is expected only with an explicit lambda around it.
+
+### `Moore` and `Mealy`
+
+```haskell
+type Moore m s i o = Lens m s s o i
+type Mealy m s i o = Lens m (s, i) s o ()
+```
+
+The aliases of phase 2, with the multiplicity passed through. `fib` is a
+`Moore 'Many`, and `console` is a `Mealy 'One`.
+
+### `lens`
+
+```haskell
+lens :: (s -> a) -> (s -> b -> t) -> Lens 'Many s t a b
+```
+
+Makes a plain lens from a view function and an update function. It is the
+`lens` of the post, so the machines of the post are written as they are
+there. It exists only at `'Many`, because the two functions both take `s`.
+
+### `compose`
+
+```haskell
+compose :: Lens m s t a b -> Lens m a b c d -> Lens m s t c d
+```
+
+Composition of maps in Poly, as in phase 2, now for every multiplicity. GHC
+checks a function for every `m` under the strict reading. It must be correct
+at `'One`, so its body must use each value one time. Such a body is also
+correct at `'Many`.
 
 ### `tensor`
 
 ```haskell
-tensor :: Moore s i o -> Moore t i' o' -> Moore (s, t) (i, i') (o, o')
+tensor :: Lens m s t a b -> Lens m s' t' a' b' -> Lens m (s, s') (t, t') (a, a') (b, b')
 ```
 
-Runs two machines in parallel as one machine. The state, the input, and the
+Runs two lenses side by side. For machines, the state, the input, and the
 output of the result are pairs. Each machine keeps its own state, and both
-step one time for each step of the pair. This is the parallel product ⊗ of
-Poly, on maps. The pairs in the type are ⊗ on the monomial interfaces.
+step one time for each step of the pair.
+
+This is the parallel product ⊗ of Poly, on maps. The pairs in the type are ⊗
+on the monomial interfaces. It is one function for pure machines and for
+machines on the token.
 
 ### The pile: `plus`, `delay`, `plusDelay`, `fibWiring`, and `fib`
 
 ```haskell
-plus  :: Moore Int (Int, Int) Int
-delay :: Moore Int Int Int
+plus  :: Moore 'Many Int (Int, Int) Int
+plus  = lens id (\_ (x, y) -> x + y)
 
-plusDelay :: Moore (Int, Int) ((Int, Int), Int) (Int, Int)
+delay :: Moore 'Many Int Int Int
+delay = lens id (\_ y -> y)
+
+plusDelay :: Moore 'Many (Int, Int) ((Int, Int), Int) (Int, Int)
 plusDelay = plus `tensor` delay
 
-fibWiring :: Lens (Int, Int) ((Int, Int), Int) Int ()
+fibWiring :: Lens 'Many (Int, Int) ((Int, Int), Int) Int ()
 
-fib :: Moore (Int, Int) () Int
-fib = plusDelay . fibWiring
+fib :: Moore 'Many (Int, Int) () Int
+fib = plusDelay `compose` fibWiring
 ```
 
-All of this is the code of the post. `plus` sets its state to the sum of its
-two inputs. `delay` sets its state to its input, so it shows the input of the
-step before. `fibWiring` is an inner wiring. It sends both outputs to `plus`,
-sends the output of `plus` to `delay`, and gives the output of `delay` to the
-outside. `fib` is the pile composed with that wiring. Its output is the
-Fibonacci sequence.
+This is the pile of the post. The bodies of the machines are the same as
+there. Two things differ: the types name `'Many`, and `fib` uses `compose`
+where the post has `.`, because these lenses are not in the functor form.
+
+`plus` sets its state to the sum of its two inputs. `delay` sets its state to
+its input, so it shows the input of the step before. `fibWiring` is an inner
+wiring. It sends both outputs to `plus`, sends the output of `plus` to
+`delay`, and gives the output of `delay` to the outside. `fib` is the pile
+composed with that wiring. Its output is the Fibonacci sequence.
 
 ### The outer wiring: `outer`
 
@@ -694,17 +738,17 @@ it is a dependent lens from `Int y^()` to the protocol.
 ### `into`
 
 ```haskell
-into :: Moore s i o -> (o -> Step f i) -> Program f s
-into machine wiring s = case wiring (observe machine s) of
-  Step command continue ->
-    Step command (\response -> transition machine s (continue response))
+into :: Moore 'Many s i o -> (o -> Step f i) -> Program f s
+into machine wiring s = case runLens machine s of
+  (o, next) -> case wiring o of
+    Step command continue -> Step command (\response -> next (continue response))
 ```
 
 Composes a machine with an outer wiring. The result is a program whose state
 is the state of the full pile. It is composition in Poly, `Syˢ ⇒ Oyᴵ ⇒ p`,
 where the second map is a dependent lens to the polynomial `p` of the
-protocol. It is the same operation as the `.` in `plusDelay . fibWiring`. It
-has its own function because `.` cannot take a dependent lens.
+protocol. It is the same operation as `compose`. It has its own function
+because `compose` cannot take a dependent lens.
 
 In Poly, a wiring diagram is a map from the tensor of the inner interfaces to
 the outer one. The outer one is now the polynomial of the protocol.
@@ -727,7 +771,6 @@ with exit code 0. It takes no input.
 - Inner wires have fixed types. The outer wiring knows the command, so it
   can convert the response with no catch-all. The inner machines see one
   plain input type.
-- The phase has two lens types.
 
 An example that shows the first defect is not built. A latch machine reads
 numbers from stdin and writes the largest so far. Each number needs a
@@ -902,8 +945,8 @@ operation. The phase 4 one is the case where both interfaces are monomials.
 An earlier name for this one was `both`.
 
 ```haskell
-tensor :: Moore s i o -> Moore t i' o' -> Moore (s, t) (i, i') (o, o')     -- phase 4
-tensor :: Program f s -> Program g t  -> Program (Tensor f g) (s, t)      -- phase 6
+tensor :: Lens m s t a b -> Lens m s' t' a' b' -> Lens m (s, s') (t, t') (a, a') (b, b')   -- phase 4
+tensor :: Program f s    -> Program g t        -> Program (Tensor f g) (s, t)              -- phase 6
 ```
 
 - This is the parallel composition that was not possible in phase 2, when
@@ -933,6 +976,24 @@ Problems to expect with dependent protocols in Haskell.
 - Smaller tokens, one for each protocol, with a lens
   `Lens World World (Stdin, Stdout) (Stdin, Stdout)`. It is `dup` with types
   that say which machine touches what.
+- A `Category` instance for the phase 4 `Lens`, so that `.` and `>>>` take
+  the place of `compose`. It works in a scratch test. The class wants two
+  parameters, so an object must be a pair of types, which is a monomial.
+
+  ```haskell
+  newtype Lens (m :: Multiplicity) (p :: (Type, Type)) (q :: (Type, Type))
+    = Lens {runLens :: Fst p %m -> (Fst q, Snd q %m -> Snd p)}
+
+  type Moore m s i o = Lens m '(s, s) '(o, i)
+  ```
+
+  `Fst` and `Snd` are type families that take a pair apart. They let `id`
+  exist for every object. The category is the full subcategory of Poly on
+  monomials. The order of `.` is the reverse of the post, so
+  `fib = fibWiring . plusDelay`, or `plusDelay >>> fibWiring`. The costs are
+  `TypeFamilies`, promoted pairs in the types of wirings, and weaker type
+  inference. `into` would stay a separate function, because a protocol is
+  not a monomial. The decision was to keep `compose`.
 - An output of `Either r o` to say that a machine has finished.
 - The fixed point of a machine that can halt with a result is a free monad.
 - monoidal-functors has classes for the tensor of plain machines. Version
@@ -962,8 +1023,6 @@ No test covers the library. The test suite has one placeholder property.
 Small items that are not part of a phase.
 
 - Confirm the order of phases 5 and 6.
-- Check if a lens with a multiplicity parameter, `s %m -> (a, b %m -> t)`,
-  can replace the two lens types of phase 4.
 - Handle end of file on stdin. All phases end with an exception there.
 - Add a prompt to the echo programs, so that the wait for input is visible.
 - Add tests. The test suite has one placeholder property.
