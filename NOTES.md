@@ -18,22 +18,19 @@ The phases record how the design changes from one step to the next.
 | 2     | Effects are Mealy machines on the token                                 | Built       |
 | 3     | Command and response. The world answers a protocol. Programs are pure   | Built       |
 | 4     | Wiring diagrams. A pile of pure machines with the protocol on the outside | Built     |
-| 5     | `Tree`. The state of a program is hidden                                | Not started |
+| 5     | `Tree`. The state of a program is hidden                                | Built       |
 | 6     | `Tensor`, and `tensor` on programs. Two programs each give a command in the same step | Not started |
-
-The order of phases 5 and 6 is not confirmed. Phase 6 does not depend on
-phase 5.
 
 `app/Main.hs` selects the phase to run. It has one line for each phase.
 Remove the comment marker from one line and put one on the others.
 
 ```haskell
 main :: IO ()
-main = Phase1.main
-
+-- main = Phase1.main
 -- main = Phase2.main
 -- main = Phase3.main
 -- main = Phase4.main
+main = Phase5.main
 ```
 
 Each line is a full definition, so that ormolu keeps the lines in place.
@@ -779,9 +776,17 @@ every machine on every step, so on the second step the latch gets an input
 with no new number. The fix is an input type such as `Maybe Int`, or a small
 controller machine in the pile.
 
-## Phase 5. Tree (not started)
+## Phase 5. Tree
 
-Everything in this phase is by hand and is not compiled.
+A program is a tree of interactions with no state type, and it has a `do`
+notation with no monad.
+
+Modules: `Phase5`, `Phase5.Tree`, `Phase5.Tree.Do`, `Phase5.Lens`,
+`Phase5.World`, `Phase5.Console`, `Phase5.Program`.
+
+The last four are copies from phase 4. The phase has no `Wiring` module and
+no pile. Everything up to the part "The limit" is built. The limit and the
+answers from Poly are by hand and are not compiled.
 
 ### `Tree`
 
@@ -813,6 +818,37 @@ The type in the chat was `data Moore cmd r = Moore (cmd r) (r -> Moore cmd r)`.
 That has `r` as a parameter, so every node has the same response type. The
 example needs a hidden `r`, as above.
 
+The name fits the naming rule. The Poly book calls these `p`-trees. They are
+the positions of the cofree comonoid on `p`.
+
+### `unroll`
+
+```haskell
+unroll :: Program f (Tree f)
+unroll (Tree command continue) = Step command continue
+```
+
+Takes one layer off a tree. It is a `Program` whose state is the tree. So
+the `annihilate` and `run` of phase 3 run a tree with no change, and the
+phase needs no new driver.
+
+```haskell
+runTree :: Tree Command -> IO ()
+runTree tree = run tree (annihilate unroll console)
+```
+
+### `unfold`
+
+```haskell
+unfold :: Program f t -> t -> Tree f
+unfold program t = case program t of
+  Step command continue -> Tree command (\response -> unfold program (continue response))
+```
+
+The other direction. It turns a phase 3 program and a start state into a
+tree. `unroll` and `unfold` together are what "fixed point of `Step`" means
+in code.
+
 ### `do` notation with no monad
 
 The `QualifiedDo` extension lets a `do` block take its `>>=` and `>>` from a
@@ -820,20 +856,23 @@ module that the code names. It does not ask for a `Monad` instance, and the
 two functions can have any types. For `Tree`, the bind is the constructor.
 
 ```haskell
-module Tree.Do where
+module Phase5.Tree.Do where
 
 (>>=) :: f r -> (r -> Tree f) -> Tree f
 (>>=) = Tree
 
 (>>) :: f r -> Tree f -> Tree f
-c >> k = Tree c (\_ -> k)
+command >> rest = Tree command (\_ -> rest)
 ```
+
+A module that uses the notation turns on `QualifiedDo`, imports this module
+with `import Phase5.Tree.Do qualified as Tree`, and writes `Tree.do`.
 
 A program is then a real `do` block.
 
 ```haskell
 greet :: Tree Command
-greet = Tree.Do.do
+greet = Tree.do
   PutStrLn "What is your name?"
   name <- GetStrLn
   PutStrLn ("hello " ++ name)
@@ -854,6 +893,57 @@ A quasiquoter can give the same notation. It would turn `x <- c; rest` into
 statements, such as `haskell-src-meta`, which is one more dependency. It is
 worth it only for syntax that a `do` block cannot give.
 
+### The programs
+
+```haskell
+stop :: Tree Command
+stop = Tree Quit absurd
+
+greet :: Tree Command
+greet = Tree.do
+  PutStrLn "What is your name?"
+  name <- GetStrLn
+  PutStrLn ("hello " ++ name)
+  echo
+
+echo :: Tree Command
+echo = Tree.do
+  line <- GetStrLn
+  if line == "quit"
+    then stop
+    else Tree.do
+      PutStrLn line
+      echo
+```
+
+`greet` asks for a name, greets, and then runs `echo`. `echo` reads a line
+and writes it back, and stops when the line is `quit`. Phase 3 could write
+this only with a state type. Here `name` and `line` are ordinary variables,
+and the loop is the recursion in `echo`.
+
+```haskell
+unfolded :: Tree Command
+unfolded = unfold echoProgram Reading
+```
+
+`echoProgram` is the echo program of phase 3, with its `Echo` state type.
+`unfolded` is its tree, and it does the same as `echo`. So the programs of
+phase 3 are trees too.
+
+`Phase5.main` has one line for each demo, in the same style as
+`app/Main.hs`.
+
+```haskell
+main :: IO ()
+main = runTree greet
+
+-- main = runTree unfolded
+```
+
+### Defect
+
+A tree has no result. The next part shows what that prevents.
+
 ### The limit: a tree has no result
 
 The left side of `<-` is a single command. The result of another tree cannot
@@ -862,12 +952,12 @@ the answer, and a program uses it two times.
 
 ```haskell
 ask :: String -> Tree Command
-ask question = Tree.Do.do
+ask question = Tree.do
   PutStrLn question
   GetStrLn                             -- error 1
 
 greet :: Tree Command
-greet = Tree.Do.do
+greet = Tree.do
   name <- ask "What is your name?"     -- error 2
   age  <- ask "How old are you?"
   PutStrLn (name ++ " is " ++ age)
@@ -889,7 +979,7 @@ calls to it are nested lambdas outside the `do` notation.
 
 ```haskell
 ask :: String -> (String -> Tree Command) -> Tree Command
-ask question continue = Tree.Do.do
+ask question continue = Tree.do
   PutStrLn question
   answer <- GetStrLn
   continue answer
@@ -897,7 +987,7 @@ ask question continue = Tree.Do.do
 greet :: Tree Command
 greet =
   ask "What is your name?" $ \name ->
-    ask "How old are you?" $ \age -> Tree.Do.do
+    ask "How old are you?" $ \age -> Tree.do
       PutStrLn (name ++ " is " ++ age)
       stop
 ```
@@ -907,6 +997,75 @@ There are two ways to get `name <- ask "..."`, and each one is a monad.
 - A result type on the tree, `Tree f a`. That is the free monad.
 - A bind that takes helpers of type `(r -> Tree f) -> Tree f` on its left
   side. That is the continuation monad, without the class.
+
+### Answers from Poly to the limit
+
+Any answer is the free monad in some form. Poly gives two ways to see it
+that fit this project better than a `Monad` instance. Both are from memory
+and by hand. They need a check.
+
+**Idea A. A helper is a command of a composite protocol.** `◁` is how two
+steps run in sequence, as `runThen` shows in phase 2. It works on protocols
+too. A command of `p ◁ q` is a `p` command, and a function from its response
+to a `q` command. Its response is both responses.
+
+```haskell
+data Then f g r where
+  Then :: f a -> (a -> g b) -> Then f g (a, b)
+
+ask :: String -> Then Command Command ((), String)
+ask question = Then (PutStrLn question) (\() -> GetStrLn)
+```
+
+`ask` is not a piece of a program with a result. It is one command of a
+larger protocol, and a command always had a response. It can go on the left
+side of `<-` with no change to `Tree` or to the bind. The limit is that the
+length of the helper is fixed in its type.
+
+**Idea B. The free monad on a protocol is a protocol.** In Poly, the free
+monad on `p` is a polynomial too, written 𝔪_p. Its positions are finite trees
+of `p` interactions, and the directions of a tree are its leaves. In this
+encoding it has the kind of a protocol.
+
+```haskell
+data Free f r where
+  Pure :: r -> Free f r
+  Bind :: f a -> (a -> Free f r) -> Free f r
+```
+
+Read `Free f r` as "a finite interaction whose total response is `r`". A
+helper of any length is then a command of the protocol `Free Command`.
+
+```haskell
+ask :: String -> Free Command String
+
+greet :: Tree (Free Command)
+greet = Tree.do
+  name <- ask "What is your name?"
+  age  <- ask "How old are you?"
+  PutStrLn' (name ++ " is " ++ age)
+  stop
+```
+
+- `Tree` and the bind do not change.
+- One function expands a `Tree (Free f)` to a `Tree f`. Or the world answers
+  `Free f` commands directly.
+- Idea A is inside idea B, because 𝔪_p has every finite composite.
+- A plain command must be lifted into `Free Command` to be a statement in
+  such a block. `PutStrLn'` in the example is a lifted `PutStrLn`.
+
+The point for the post: the monad does not arrive as a new kind of thing. It
+is one more polynomial. Its monad structure is a monoid for `◁`, the same
+product that gives `runThen`. These are the "polynomial monads" that Reed
+mentioned.
+
+A paper that could be `annihilate` at this level is Libkind and Spivak,
+"Pattern runs on matter". As far as I remember, programs are free monads,
+machines are cofree comonoids, and to run a program is a pairing of the two.
+The reference is not checked.
+
+This could be a phase after phase 6, or the end of the post. It is not in
+the phase plan.
 
 ## Phase 6. Tensor (not started)
 
@@ -1022,7 +1181,11 @@ No test covers the library. The test suite has one placeholder property.
 
 Small items that are not part of a phase.
 
-- Confirm the order of phases 5 and 6.
+- Check the two answers from Poly to the limit of `Tree`: that `◁` on
+  protocols gives composite commands, and that the free monad 𝔪_p is a
+  polynomial and a monoid for `◁`. The poly Agda repo is the place for it.
+- Check the reference Libkind and Spivak, "Pattern runs on matter", and what
+  it says about free monads and cofree comonoids.
 - Handle end of file on stdin. All phases end with an exception there.
 - Add a prompt to the echo programs, so that the wait for input is visible.
 - Add tests. The test suite has one placeholder property.
