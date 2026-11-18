@@ -36,8 +36,17 @@ library
     Phase3.Lens
     Phase3.Program
     Phase3.World
+    Phase4
+    Phase4.Console
+    Phase4.Lens
+    Phase4.Moore
+    Phase4.Program
+    Phase4.Wiring
+    Phase4.World
 
-  build-depends:   base >=4.18 && <5
+  build-depends:
+    , base       >=4.18 && <5
+    , microlens
 
 executable realworld-haskell
   import:         common-settings
