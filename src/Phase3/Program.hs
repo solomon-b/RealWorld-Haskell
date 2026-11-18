@@ -6,7 +6,7 @@ module Phase3.Program
     Program,
 
     -- * Closed Loop
-    close,
+    annihilate,
   )
 where
 
@@ -37,12 +37,19 @@ type Program f t = t -> Step f t
 -- takes one command from the program, gives it to the world, and gives
 -- the response to the program.
 --
--- The result has no input and no output. Its state is the token and
--- the state of the program.
-close ::
-  (forall r. Mealy World (Ur (f r)) (Ur r)) ->
+-- The program is the Moore side and the world is the Mealy side. The
+-- output of each is the input of the other, so the result has no input
+-- and no output. In Poly:
+--
+-- @
+-- annihilate : Moore S A B → Mealy T B A → monomial S S ⊗ monomial T T ⇒ 𝕐
+-- @
+--
+-- The state of the result is the token and the state of the program.
+annihilate ::
   Program f t ->
+  (forall r. Mealy World (Ur (f r)) (Ur r)) ->
   Moore (World, Ur t) () ()
-close world program = Lens $ \(token, Ur t) -> case program t of
+annihilate program world = Lens $ \(token, Ur t) -> case program t of
   Step command continue -> case runMealy world token (Ur command) of
     (Ur response, token') -> ((), \() -> (token', Ur (continue response)))

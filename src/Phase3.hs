@@ -4,7 +4,7 @@
 -- answers the commands of a protocol. The type of a response depends
 -- on its command. A program is pure code. It is a function from a
 -- state to a 'Step', which is one command and a function from its
--- response to the next state. 'close' runs a program against the
+-- response to the next state. 'annihilate' runs a program against the
 -- world.
 --
 -- The 'Quit' command gives the program a halt path.
@@ -22,13 +22,13 @@ where
 
 import Data.Void (absurd)
 import Phase3.Console (Command (..), console)
-import Phase3.Program (Program, Step (..), close)
+import Phase3.Program (Program, Step (..), annihilate)
 import Phase3.World (run)
 
 --------------------------------------------------------------------------------
 
 main :: IO ()
-main = run Reading (close console echo)
+main = run Reading (annihilate echo console)
 
 data Echo
   = Reading
