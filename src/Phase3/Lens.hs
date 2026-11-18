@@ -6,14 +6,11 @@ module Phase3.Lens
 
     -- * Moore
     Moore,
-    moore,
 
     -- * Mealy
     Mealy,
     mealy,
     runMealy,
-    lmap,
-    rmap,
   )
 where
 
@@ -35,12 +32,6 @@ compose (Lens f) (Lens g) = Lens $ \s -> case f s of
 -- output depends only on the state.
 type Moore s i o = Lens s s o i
 
--- | Makes a Moore machine from two Mealy machines on the same state.
--- The first gives the observation. The second gives the transition.
-moore :: Mealy s () o -> Mealy s i () -> Moore s i o
-moore observe transition = Lens $ \s -> case runMealy observe s () of
-  (o, s') -> (o, \i -> case runMealy transition s' i of ((), s'') -> s'')
-
 --------------------------------------------------------------------------------
 
 -- | A Mealy machine with state @s@, input @i@, and output @o@. The
@@ -54,12 +45,3 @@ mealy f = Lens $ \(s, i) -> case f s i of
 runMealy :: Mealy s i o -> s %1 -> i %1 -> (o, s)
 runMealy (Lens f) s i = case f (s, i) of
   (o, next) -> (o, next ())
-
--- | Changes the input of a Mealy machine.
-lmap :: (i' %1 -> i) -> Mealy s i o -> Mealy s i' o
-lmap f machine = mealy $ \s i -> runMealy machine s (f i)
-
--- | Changes the output of a Mealy machine.
-rmap :: (o %1 -> o') -> Mealy s i o -> Mealy s i o'
-rmap f machine = mealy $ \s i -> case runMealy machine s i of
-  (o, s') -> (f o, s')

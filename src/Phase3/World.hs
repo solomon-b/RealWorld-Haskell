@@ -46,15 +46,17 @@ liftIO f = mealy $ \world (Ur i) -> perform (f i) world
 
 --------------------------------------------------------------------------------
 
--- | Steps a machine that has no input and no output.
+-- | Steps a closed system that has no input and no output. Its state
+-- is the token and a second state, which starts at the given value.
 --
--- TODO: The machine has no halt path. This loop stops only when an
--- effect throws an exception.
-run :: Moore World () () -> IO ()
-run machine = IO (\s -> case loop (World s) of World s' -> (# s', () #))
+-- The loop stops only when an effect throws an exception. An effect
+-- such as @exitSuccess@ uses that to stop the program.
+run :: forall t. t -> Moore (World, Ur t) () () -> IO ()
+run initial machine =
+  IO (\s -> case loop (World s, Ur initial) of (World s', Ur _) -> (# s', () #))
   where
-    loop :: World %1 -> World
-    loop world = case runLens machine world of
+    loop :: (World, Ur t) %1 -> (World, Ur t)
+    loop state = case runLens machine state of
       ((), next) -> loop (next ())
 
 --------------------------------------------------------------------------------
