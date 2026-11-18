@@ -16,12 +16,12 @@
       packages = forAllSystems (pkgs: {
         realworld-haskell = pkgs.haskellPackages.callCabal2nix "realworld-haskell" ./. { };
 
-        default = self.packages.${pkgs.system}.realworld-haskell;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.realworld-haskell;
       });
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.haskellPackages.shellFor {
-          packages = _: [ self.packages.${pkgs.system}.realworld-haskell ];
+          packages = _: [ self.packages.${pkgs.stdenv.hostPlatform.system}.realworld-haskell ];
 
           nativeBuildInputs = [
             pkgs.cabal-install
