@@ -42,6 +42,13 @@ library
     Phase4.Program
     Phase4.Wiring
     Phase4.World
+    Phase5
+    Phase5.Console
+    Phase5.Lens
+    Phase5.Program
+    Phase5.Tree
+    Phase5.Tree.Do
+    Phase5.World
 
   build-depends:
     , base       >=4.18 && <5
