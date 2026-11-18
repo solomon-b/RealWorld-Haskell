@@ -91,9 +91,9 @@ This is the current direction. It is the next step after the Lensy Moore post
 and cofree-bot. The world is one machine that owns the token. The program is
 pure code. A closed loop runs the program against the world.
 
-Status: the protocol and the world side are built and not committed. The
-program side is not built. Every claim about `Step`, `plug`, and the closed
-loop is by hand and is not compiled.
+Status: the protocol, the world side, `Step`, a pure echo program, and the
+closed loop are built, and phase 3 runs. `plug` and the wiring of a pile of
+machines are not built, and the claims about them are by hand.
 
 ### Where it started: annihilate
 
@@ -187,7 +187,7 @@ console = liftIO interpret
   path is inside the protocol.
 - All monadic `IO` of a program is in one function at the edge, `interpret`.
 
-### Step (not built)
+### Step (built)
 
 One step of a program says which command to do, and how to continue from the
 response. A plain pair fails.
@@ -207,8 +207,11 @@ data Step f t where
 ```
 
 `f` is the protocol. `t` is the type of the next state. `r` is in both
-arguments and not in the result type. The real version has `%1` on some
-arrows.
+arguments and not in the result type.
+
+The program side is not linear. A program is pure, and its state is ordinary
+data, so `Step` has plain arrows. Only the closed loop is linear. It holds
+the token and the program state together, as `(World, Ur t)`.
 
 These three values have different `r` inside and the same type.
 
@@ -226,9 +229,11 @@ A Moore step is the pair `(o, i -> s)` with one fixed `i`. `Step` is the same
 pair, where the output is a command and the type of the input is chosen by
 that command. `Step f` is the polynomial functor of the protocol `f`.
 
-### A program is a state machine (not built)
+### A program is a state machine (built)
 
 A program is a function `t -> Step f t`. The state says where the program is.
+`Phase3.echo` is a small program of this form, with a `quit` line that gives
+the `Quit` command. The larger example below is not in the repo.
 
 ```haskell
 data S
@@ -298,15 +303,26 @@ Limits:
 - The wirings in the post use some values two times. In the linear `Lens`,
   those wires must carry `Ur` values.
 
-### The plan for the program side
+### The closed loop (built)
 
-1. `Step`.
-2. A pure echo program of type `t %1 -> Step Command t`.
-3. The closed loop that runs a program against `console`.
-4. `main` changed to run it, with `Quit` as a real halt.
+```haskell
+close ::
+  (forall r. Mealy World (Ur (f r)) (Ur r)) ->
+  Program f t ->
+  Moore (World, Ur t) () ()
 
-Phase 3 has its own copy of `Lens.hs`. After the closed loop exists, the
-parts of that copy that phase 3 does not use, such as `moore`, can go.
+main = run Reading (close console echo)
+```
+
+Each step of `close` takes one command from the program, gives it to the
+world, and gives the response to the program. It is `annihilate` for this
+shape, with the program on the Moore side.
+
+`Quit` runs `exitSuccess`, and the program ends with exit code 0. End of file
+on stdin still ends the program with an exception.
+
+The phase 3 copy of `Lens.hs` has no `moore`, `lmap`, or `rmap`, because
+phase 3 does not use them. It keeps `compose` for the wiring work.
 
 ### Deferred: Fix
 
@@ -351,7 +367,7 @@ and what its defect is.
 | --- | --- | --- |
 | 1 | `Phase1`, `Phase1.Lens`, `Phase1.World`, `Phase1.Console` | The token is a value. Each effect is a function `World %1 -> (a, World)`. One Moore machine owns the token |
 | 2 | `Phase2`, `Phase2.Lens`, `Phase2.World` | Each effect is a Mealy machine on `World`, made with `liftIO`. A program is a Moore machine built by composition. Sections "The design" and "About the token" describe this phase |
-| 3 | `Phase3.Lens`, `Phase3.World`, `Phase3.Console` | Command and response. The protocol and the world side are built. The program side is not, so there is no `Phase3` top module and no `main` yet |
+| 3 | `Phase3`, `Phase3.Lens`, `Phase3.World`, `Phase3.Console`, `Phase3.Program` | Command and response. The world is a Mealy machine that answers a protocol. A program is pure, and `close` runs it against the world |
 
 `app/Main.hs` selects the phase. Remove the comment marker from one line and
 put one on the others.
@@ -360,12 +376,13 @@ put one on the others.
 main :: IO ()
 main =
   -- Phase1.main
-  Phase2.main
+  -- Phase2.main
+  Phase3.main
 ```
 
 Run it in the dev shell (`nix develop`) with `cabal run realworld-haskell`.
-Phases 1 and 2 are echo programs. They read a line and write it back, and
-they give no prompt.
+All three phases are echo programs. They read a line and write it back, and
+they give no prompt. Phase 3 stops when the line is `quit`.
 
 ## About the token
 
