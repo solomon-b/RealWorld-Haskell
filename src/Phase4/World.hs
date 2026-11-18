@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 
@@ -25,7 +26,7 @@ where
 
 import GHC.Base (IO (..))
 import GHC.Exts (RealWorld, State#)
-import Phase4.Lens (Lens (..), Mealy, Moore, mealy)
+import Phase4.Lens (Lens (..), Mealy, Moore, Multiplicity (..), mealy)
 import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
@@ -41,7 +42,7 @@ data Ur a where
 
 -- | Makes a machine from a function in 'IO'. The machine does the
 -- effect one time for each input.
-liftIO :: (i -> IO o) -> Mealy World (Ur i) (Ur o)
+liftIO :: (i -> IO o) -> Mealy 'One World (Ur i) (Ur o)
 liftIO f = mealy $ \world (Ur i) -> perform (f i) world
 
 --------------------------------------------------------------------------------
@@ -51,7 +52,7 @@ liftIO f = mealy $ \world (Ur i) -> perform (f i) world
 --
 -- The loop stops only when an effect throws an exception. An effect
 -- such as @exitSuccess@ uses that to stop the program.
-run :: forall t. t -> Moore (World, Ur t) () () -> IO ()
+run :: forall t. t -> Moore 'One (World, Ur t) () () -> IO ()
 run initial machine =
   IO (\s -> case loop (World s, Ur initial) of (World s', Ur _) -> (# s', () #))
   where

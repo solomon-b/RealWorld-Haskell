@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 -- | The console protocol, and the machine that answers it.
 module Phase4.Console
   ( -- * Protocol
@@ -12,7 +14,7 @@ where
 --------------------------------------------------------------------------------
 
 import Data.Void (Void)
-import Phase4.Lens (Mealy)
+import Phase4.Lens (Mealy, Multiplicity (..))
 import Phase4.World (Ur, World, liftIO)
 import System.Exit (exitSuccess)
 
@@ -37,5 +39,5 @@ interpret = \case
 
 -- | The world side of the protocol. It takes a command and gives the
 -- response to that command.
-console :: Mealy World (Ur (Command r)) (Ur r)
+console :: Mealy 'One World (Ur (Command r)) (Ur r)
 console = liftIO interpret

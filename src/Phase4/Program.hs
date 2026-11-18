@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 -- | Pure programs that speak a protocol, and the loop that runs a
 -- program against the world.
 module Phase4.Program
@@ -12,7 +14,7 @@ where
 
 --------------------------------------------------------------------------------
 
-import Phase4.Lens (Lens (..), Mealy, Moore, runMealy)
+import Phase4.Lens (Lens (..), Mealy, Moore, Multiplicity (..), runMealy)
 import Phase4.World (Ur (..), World)
 
 --------------------------------------------------------------------------------
@@ -48,8 +50,8 @@ type Program f t = t -> Step f t
 -- The state of the result is the token and the state of the program.
 annihilate ::
   Program f t ->
-  (forall r. Mealy World (Ur (f r)) (Ur r)) ->
-  Moore (World, Ur t) () ()
+  (forall r. Mealy 'One World (Ur (f r)) (Ur r)) ->
+  Moore 'One (World, Ur t) () ()
 annihilate program world = Lens $ \(token, Ur t) -> case program t of
   Step command continue -> case runMealy world token (Ur command) of
     (Ur response, token') -> ((), \() -> (token', Ur (continue response)))

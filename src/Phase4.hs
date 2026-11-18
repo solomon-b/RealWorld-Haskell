@@ -1,9 +1,15 @@
+{-# LANGUAGE DataKinds #-}
+
 -- | Phase 4. Wiring diagrams.
 --
 -- The program is a pile of pure Moore machines from the Lensy Moore
 -- post. The machines are joined with 'tensor' and wired with a plain
 -- lens. 'into' then gives the pile the console protocol as its outer
 -- interface, and the result is a 'Program' as in phase 3.
+--
+-- The lens type has a multiplicity parameter. The pure machines are
+-- lenses at @'Many@, and the machines that hold the token are lenses
+-- at @'One@. Both use the same 'compose' and 'tensor'.
 --
 -- Defect: the pile gives one command for each step. The outer wiring
 -- must choose one command from all the outputs of the pile.
@@ -21,9 +27,8 @@ where
 --------------------------------------------------------------------------------
 
 import Data.Void (absurd)
-import Lens.Micro (Lens, lens)
 import Phase4.Console (Command (..), console)
-import Phase4.Moore (Moore, tensor)
+import Phase4.Lens (Lens, Moore, Multiplicity (..), compose, lens, tensor)
 import Phase4.Program (Step (..), annihilate)
 import Phase4.Wiring (into)
 import Phase4.World (run)
@@ -37,18 +42,18 @@ main = run (1, 0) (annihilate (fib `into` outer) console)
 -- The pile, from the post
 
 -- | Int × y^Int => Int × y^(Int × Int)
-plus :: Moore Int (Int, Int) Int
+plus :: Moore 'Many Int (Int, Int) Int
 plus = lens id (\_ (x, y) -> x + y)
 
 -- | Int × y^Int => Int × y^Int
-delay :: Moore Int Int Int
+delay :: Moore 'Many Int Int Int
 delay = lens id (\_ y -> y)
 
 -- | (ℤ × ℤ) y^ (ℤ × ℤ) ⇒ (ℤ × ℤ) y^ ((ℤ × ℤ) × ℤ)
-plusDelay :: Moore (Int, Int) ((Int, Int), Int) (Int, Int)
+plusDelay :: Moore 'Many (Int, Int) ((Int, Int), Int) (Int, Int)
 plusDelay = plus `tensor` delay
 
-fibWiring :: Lens (Int, Int) ((Int, Int), Int) Int ()
+fibWiring :: Lens 'Many (Int, Int) ((Int, Int), Int) Int ()
 fibWiring =
   lens
     -- The Q output is wired to the outer interface's output:
@@ -58,8 +63,8 @@ fibWiring =
     (\(pout, qout) () -> ((pout, qout), pout))
 
 -- | (ℤ × ℤ) y^ (ℤ × ℤ) ⇒ ℤ y^ Unit
-fib :: Moore (Int, Int) () Int
-fib = plusDelay . fibWiring
+fib :: Moore 'Many (Int, Int) () Int
+fib = plusDelay `compose` fibWiring
 
 --------------------------------------------------------------------------------
 -- The outer wiring
