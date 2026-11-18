@@ -769,23 +769,24 @@ with exit code 0. It takes no input.
   can convert the response with no catch-all. The inner machines see one
   plain input type.
 
-An example that shows the first defect is not built. A latch machine reads
-numbers from stdin and writes the largest so far. Each number needs a
-`GetStrLn` and then a `PutStrLn`, which is two steps. But the tensor steps
-every machine on every step, so on the second step the latch gets an input
-with no new number. The fix is an input type such as `Maybe Int`, or a small
-controller machine in the pile.
+An example of the first defect: a latch machine reads numbers from stdin and
+writes the largest so far. Each number needs a `GetStrLn` and then a
+`PutStrLn`, which is two steps. But every machine steps on every step, so on
+the second step the latch gets an input with no new number. A fix in this
+phase would be an input type such as `Maybe Int`, or a small controller
+machine in the pile. Phase 5 has this example, with a tree as the outer
+wiring.
 
 ## Phase 5. Tree
 
 A program is a tree of interactions with no state type, and it has a `do`
 notation with no monad.
 
-Modules: `Phase5`, `Phase5.Tree`, `Phase5.Tree.Do`, `Phase5.Lens`,
-`Phase5.World`, `Phase5.Console`, `Phase5.Program`.
+Modules: `Phase5`, `Phase5.Tree`, `Phase5.Tree.Do`, `Phase5.Wiring`,
+`Phase5.Lens`, `Phase5.World`, `Phase5.Console`, `Phase5.Program`.
 
-The last four are copies from phase 4. The phase has no `Wiring` module and
-no pile. Everything up to the part "The limit" is built. The limit and the
+The last four are copies from phase 4. `Phase5.Wiring` is new, and it has
+`drive`. The phase has no pile and no `into`. Everything up to the part "The limit" is built. The limit and the
 answers from Poly are by hand and are not compiled.
 
 ### `Tree`
@@ -938,7 +939,69 @@ main :: IO ()
 main = runTree greet
 
 -- main = runTree unfolded
+-- main = runTree latched
 ```
+
+### `drive`
+
+```haskell
+drive :: Moore 'Many s i o -> (o -> (i -> Tree f) -> Tree f) -> s -> Tree f
+drive machine wiring s = case runLens machine s of
+  (o, next) -> wiring o (\i -> drive machine wiring (next i))
+```
+
+Makes a tree from a pure Moore machine, an outer wiring, and a start state.
+It is in `Phase5.Wiring`.
+
+The wiring takes the output of the machine, and a function that continues
+the program when it gets the next input of the machine. Between the two, the
+wiring can do any number of commands. So one step of the machine can be more
+than one command.
+
+Compare the `into` of phase 4. There the wiring is `o -> Step f i`, which is
+one command for each step of the machine. Here the wiring is a piece of a
+tree for each step.
+
+The wiring takes a function because a tree has no result. With a result, its
+type would be `o -> Free f i`, a function from the output to a tree that ends
+with the input. In Poly that is a map from the interface of the machine into
+the free monad 𝔪_p. So `drive` is `into` with the free monad as the outer
+interface. That reading is by hand.
+
+### The program: `latch`
+
+```haskell
+latch :: Moore 'Many Int Int Int
+latch = lens id max
+
+latchWiring :: Int -> (Int -> Tree Command) -> Tree Command
+latchWiring largest continue = Tree.do
+  PutStrLn ("largest so far: " ++ show largest)
+  line <- GetStrLn
+  case readMaybe line of
+    _ | line == "quit" -> stop
+    Just n -> continue n
+    Nothing -> Tree.do
+      PutStrLn "not a number"
+      latchWiring largest continue
+
+latched :: Tree Command
+latched = drive latch latchWiring 0
+```
+
+`latch` is the latch machine of the post. Its state is the largest number
+that it has seen. `latchWiring` writes the output of the machine, reads a
+line, and gives the number to the machine. A line that is not a number gives
+a message and a second try. `quit` stops the program.
+
+The machine is pure and has the logic. The tree has the conversation.
+
+This is the example that phase 4 could not do. Each number needs a write and
+then a read. In phase 4 that is two steps of the pile, so the latch would get
+an input with no new number. Here the two commands are one step of the
+machine.
+
+`Phase5.main` has a third line for it, `-- main = runTree latched`.
 
 ### Defect
 
