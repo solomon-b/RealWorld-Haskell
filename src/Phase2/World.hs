@@ -8,7 +8,7 @@
 -- The token holds no data. Its purpose is to fix the order of the
 -- effects. A linear function must use the token one time, so each
 -- effect depends on the effect before it.
-module RealWorld.World
+module Phase2.World
   ( -- * World
     World,
     liftIO,
@@ -27,7 +27,7 @@ where
 
 import GHC.Base (IO (..))
 import GHC.Exts (RealWorld, State#)
-import RealWorld.Lens (Lens (..), Mealy, Moore, mealy)
+import Phase2.Lens (Lens (..), Mealy, Moore, mealy)
 import System.IO qualified as IO
 import Unsafe.Coerce (unsafeCoerce)
 import Prelude hiding (getLine, putStrLn)

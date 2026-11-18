@@ -24,8 +24,14 @@ library
   import:          common-settings
   hs-source-dirs:  src
   exposed-modules:
-    RealWorld.Lens
-    RealWorld.World
+    Phase1
+    Phase1.Console
+    Phase1.Lens
+    Phase1.World
+    Phase2
+    Phase2.Lens
+    Phase2.World
+
   build-depends:   base >=4.18 && <5
 
 executable realworld-haskell

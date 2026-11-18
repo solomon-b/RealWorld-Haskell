@@ -1,5 +1,5 @@
 -- | Linear lenses, and Moore and Mealy machines as lenses.
-module RealWorld.Lens
+module Phase2.Lens
   ( -- * Lens
     Lens (..),
     compose,
